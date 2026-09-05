@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Glitchweb - GPS Image Generator</title>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div class="sidebar">
+    <h2>Generator Controls</h2>
+
+    <div class="form-group">
+      <label>Upload Image</label>
+      <input type="file" id="input-image" accept="image/*" />
+    </div>
+    <div class="form-group">
+      <label>Location Title</label>
+      <input type="text" id="input-title" value="Kochi, Kerala, India" />
+    </div>
+    <div class="form-group">
+      <label>Full Address</label>
+      <input type="text" id="input-address" value="Toc-H Nagar, kochi, Kerala 682019, India" />
+    </div>
+    <div class="form-group">
+      <label>Latitude</label>
+      <input type="text" id="input-lat" value="10.027319" />
+    </div>
+    <div class="form-group">
+      <label>Longitude</label>
+      <input type="text" id="input-lng" value="76.307723" />
+    </div>
+    <div class="form-group">
+      <label>Date & Time</label>
+      <input type="text" id="input-time" value="Sunday, 28/06/2026 04:09 PM GMT +05:30" />
+    </div>
+
+    <button class="btn-download" onclick="downloadImage()">Download Final Image</button>
+  </div>
+
+  <div class="preview-area">
+    <div class="canvas-container" id="capture-area">
+      <img id="display-image" class="uploaded-image" src="https://images.unsplash.com/photo-1596401057633-54a8fe8ef647?auto=format&fit=crop&w=800&q=80" alt="Placeholder" />
+
+      <div class="gps-tag-wrapper">
+
+        <div class="tab-row">
+          <div class="camera-tab">
+            <img class="custom-camera-icon" src="src/Screenshot%202026-09-05%20161820.png" alt="Camera Icon" />
+            GPS Map Camera
+          </div>
+        </div>
+
+        <div class="cards-container">
+          
+          <div class="map-preview">
+            <img id="map-img" crossorigin="anonymous" src="https://static-maps.yandex.ru/1.x/?ll=76.307723,10.027319&z=15&l=sat&size=200,200" alt="Map" />
+            <div class="map-pin"></div>
+            <div class="google-logo">Google</div>
+          </div>
+
+          <div class="info-bubble">
+            <div class="title-row">
+              <span class="title" id="display-title">Kochi, Kerala, India</span>
+              <img class="flag" src="https://flagcdn.com/w40/in.png" crossorigin="anonymous" alt="India Flag" />
+            </div>
+            <div class="meta-line" id="display-address">Toc-H Nagar, kochi, Kerala 682019, India</div>
+            <div class="meta-line" id="display-coords">Lat 10.027319° Long 76.307723°</div>
+            <div class="meta-line time" id="display-time">Sunday, 28/06/2026 04:09 PM GMT +05:30</div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
