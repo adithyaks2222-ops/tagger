@@ -12,56 +12,75 @@ document.getElementById('input-image').addEventListener('change', function(e) {
 
 // 2. Dynamic Text Updates
 const updateText = (inputId, displayId) => {
-  document.getElementById(inputId).addEventListener('input', function(e) {
-    document.getElementById(displayId).innerText = e.target.value;
-  });
+  const inputEl = document.getElementById(inputId);
+  if(inputEl) {
+      inputEl.addEventListener('input', function(e) {
+        document.getElementById(displayId).innerText = e.target.value;
+      });
+  }
 };
 
 updateText('input-title', 'display-title');
 updateText('input-address', 'display-address');
 updateText('input-time', 'display-time');
 
-// 3. Dynamic Coordinates & Mini-Map update targeting the <img> tag
+// 3. Dynamic Coordinates & Smart Map Toggle
 const updateCoordsAndMap = () => {
   const lat = document.getElementById('input-lat').value;
   const lng = document.getElementById('input-lng').value;
   
+  // Updates the text display exactly as typed
   document.getElementById('display-coords').innerText = `Lat ${lat}° Long ${lng}°`;
   
-  // Update image source directly
   const mapImg = document.getElementById('map-img');
-  mapImg.src = `https://static-maps.yandex.ru/1.x/?ll=${lng},${lat}&z=15&l=sat&size=200,200`;
+  
+  // SMART CHECK: Only load the map if Lat and Lng are actual numbers
+  if (lat.trim() !== '' && lng.trim() !== '' && !isNaN(lat) && !isNaN(lng)) {
+      mapImg.style.display = 'block';
+      mapImg.src = `https://static-maps.yandex.ru/1.x/?ll=${lng},${lat}&z=15&l=sat&size=200,200`;
+  } else {
+      // Hides the image to reveal the clean dark background if coordinates are missing/invalid
+      mapImg.style.display = 'none'; 
+  }
 };
 
+// Listeners for coordinates
 document.getElementById('input-lat').addEventListener('input', updateCoordsAndMap);
 document.getElementById('input-lng').addEventListener('input', updateCoordsAndMap);
 
-// 4. Download Functionality
+// Run once on load to set the initial placeholder state
+updateCoordsAndMap();
+
+// 4. Bulletproof High-Res Download Functionality
 function downloadImage() {
   const captureArea = document.getElementById('capture-area');
   const btn = document.querySelector('.btn-download');
+  const originalText = btn.innerText;
   
-  // Temporary button text to show it's working
-  btn.innerText = "Processing..."; 
+  // Show loading state
+  btn.innerText = "Processing High-Res..."; 
   
   html2canvas(captureArea, { 
-    scale: 2, 
+    scale: 4, // 4x Ultra-HD resolution prevents any blurring
     useCORS: true, 
     allowTaint: false 
   }).then(canvas => {
     const link = document.createElement('a');
-    link.download = 'Geotagger.jpg'; 
-    link.href = canvas.toDataURL('image/jpeg', 0.9);
     
-    // Append, click, and remove (Bulletproof method)
+    // PNG for ZERO compression loss
+    link.download = 'Geotagger.png'; 
+    link.href = canvas.toDataURL('image/png'); 
+    
+    // Append to body, click, and remove (safest method for all browsers)
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     
-    btn.innerText = "Download Final Image"; 
+    // Restore button text
+    btn.innerText = originalText; 
   }).catch(err => {
-    console.error(err);
-    alert("Download blocked by browser security. If you are opening this file directly from your computer, you must use a Local Web Server (like VS Code 'Live Server') to allow local images to be downloaded.");
-    btn.innerText = "Download Final Image"; 
+    console.error("Export Error:", err);
+    alert("Download blocked by browser security. Ensure you are running this on a Local Web Server or HTTPS connection.");
+    btn.innerText = originalText; 
   });
 }
