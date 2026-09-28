@@ -29,8 +29,10 @@ body {
 .sidebar h2 { font-size: 20px; margin-bottom: 10px; color: #e0e0e0; }
 .form-group { display: flex; flex-direction: column; gap: 8px; }
 .form-group label { font-size: 12px; color: #aaa; text-transform: uppercase; font-weight: 600; }
-.form-group input { background: #2a2a2a; border: 1px solid #444; color: #fff; padding: 12px; border-radius: 6px; outline: none; transition: border-color 0.2s; }
-.form-group input:focus { border-color: #4a90e2; }
+.form-group input, .form-group select { background: #2a2a2a; border: 1px solid #444; color: #fff; padding: 12px; border-radius: 6px; outline: none; transition: border-color 0.2s; font-size: 14px; }
+.form-group input:focus, .form-group select:focus { border-color: #4a90e2; }
+.form-group select { cursor: pointer; }
+.form-group select option { background: #1e1e1e; color: #fff; }
 input[type="file"] { padding: 9px; cursor: pointer; }
 
 .btn-download {
@@ -60,15 +62,16 @@ input[type="file"] { padding: 9px; cursor: pointer; }
   padding: 40px;
 }
 
+/* ANTI-SQUISH FIX */
 .canvas-container {
   position: relative;
-  width: 100%;
-  max-width: 550px;
-  aspect-ratio: 3 / 4;
+  width: 540px;  
+  height: 720px; 
   background-color: #333;
   border-radius: 8px;
   overflow: hidden;
   box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+  flex-shrink: 0; 
 }
 
 .uploaded-image {
@@ -82,8 +85,7 @@ input[type="file"] { padding: 9px; cursor: pointer; }
 .gps-tag-wrapper {
   position: absolute;
   bottom: 25px; 
-  left: 50%;
-  transform: translateX(-50%);
+  left: 3%; /* Bulletproof centering, bypasses html2canvas transform bugs */
   width: 94%;
   display: flex;
   flex-direction: column; 
@@ -116,12 +118,11 @@ input[type="file"] { padding: 9px; cursor: pointer; }
   border-radius: 2px;
 }
 
-/* THE MAGIC FLEXBOX CONTAINER (Handles dynamic height stretching) */
+/* THE MAGIC FLEXBOX CONTAINER */
 .cards-container {
   display: flex;
   align-items: stretch; 
   width: 100%;
-  gap: 8px; 
 }
 
 /* Map Card */
@@ -191,6 +192,7 @@ input[type="file"] { padding: 9px; cursor: pointer; }
   color: #ffffff;
   flex-grow: 1; 
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  margin-left: 8px;
 }
 
 /* Typography Proportions */
@@ -207,12 +209,16 @@ input[type="file"] { padding: 9px; cursor: pointer; }
   letter-spacing: -0.2px; 
 }
 
+/* THE FLAG SIZE LOCK */
 .flag { 
   height: 18px; 
   width: auto; 
   object-fit: contain; 
   border-radius: 2px;
   box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+  flex-shrink: 0;
+  display: inline-block;
+  vertical-align: middle;
 }
 
 .meta-line { 

@@ -18,6 +18,25 @@
       <input type="file" id="input-image" accept="image/*" />
     </div>
     <div class="form-group">
+      <label>Country Flag</label>
+      <select id="select-flag">
+        <option value="in" selected>🇮🇳 India</option>
+        <option value="us">🇺🇸 United States</option>
+        <option value="gb">🇬🇧 United Kingdom</option>
+        <option value="ae">🇦🇪 United Arab Emirates</option>
+        <option value="sa">🇸🇦 Saudi Arabia</option>
+        <option value="ca">🇨🇦 Canada</option>
+        <option value="au">🇦🇺 Australia</option>
+        <option value="de">🇩🇪 Germany</option>
+        <option value="fr">🇫🇷 France</option>
+        <option value="jp">🇯🇵 Japan</option>
+        <option value="sg">🇸🇬 Singapore</option>
+        <option value="custom">📁 Upload Custom Flag...</option>
+        <option value="none">🚫 No Flag</option>
+      </select>
+      <input type="file" id="input-flag" accept="image/*" style="margin-top: 4px;" title="Upload custom flag" />
+    </div>
+    <div class="form-group">
       <label>Location Title</label>
       <input type="text" id="input-title" value="City , District , Country" />
     </div>
@@ -65,7 +84,7 @@
           <div class="info-bubble">
             <div class="title-row">
               <span class="title" id="display-title">City , District , Country</span>
-              <img class="flag" src="https://flagcdn.com/w40/in.png" crossorigin="anonymous" alt="India Flag" />
+              <img class="flag" id="display-flag" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAB0AAAASCAYAAACnxdXaAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAACxIAAAsSAdLdfvwAAALqSURBVEhLtZS/b1tVFMc/5973K36xHTduXCdNSktTWKDAQGGAEdGJAQnBysAP8W8gsbBVAnYGJAQTEhnYgAHRAYREq0iRSpM2KW3s2M6z/Z7tdw9DQlRbEFrhfqYrnaPzPfqec48wBVS/tHc+/2I+SO+eFE9PGLKIgYqGYT7SQiePCpu1t765K4ICiIK0P336I8T8RlTc4NRTTamc3ivd/GX/d2A+bflpp1UsS3/BWLdoHCvCcAl1KwaWVXlM0BVD7k828zeKoGJbuY2vzb7z1WVRRbqfnEut5sH9SQ5RAIuTsQr/A2cCZt5bqxlQUBkrLCgWJ9MUBA68JcZMBh493emKqlicF6NhBY1O4IIyzvjAuGGiqpKsfZDZxjVfk20kH3C4ZEcogtoAiSpQWCCPT3Gr6VE6vUqpfh7iGlqoYsI5MD6KAQTBgY7QtA2dG9DcIH7uzdqBaLeXIgSiIzRrwWAf8hGIoDZEwhLix6gYWu0eG+u3qC/O001SAC48uTzW5HHEMzO1Q3tVAVQ8iKpQOguVVZg7jxSXISgfxDDc2NimXC5w9efr9Pt9ur1souzxdOFwpiL5ZPDfsNbS2G3RbCbkoxzzkPsdH4lOTvoYsmzAhSfO8Orl5ymWZimXZydT/hNRVfn1j/Xk7MmlgpXjl1lR+sOM7368ys1727iCIwsG7LR3udNp0ui2aff3SYcDnDoC61OMCtTLVc5Vl7i4tMrbL71WE4Dg3Ut7hTCaO1NdpF6apxTN4nsezjmy0YBWP6GRtPmz02Cv1zk8oEedHLzHF/4fCY3H7SvfLxyJYmRuMmnaBMayfeWHheP9fAQkJNO9SA+CCioA0fsv7jn0ge0VoBgWhr61t8XYTVHZCq23YzxzLzJBJwrCLPCsJmnP9NJhcchocTgaroryzPWP1y4JwIdff1b/dv2nZxvd9uOqsqJGKy7PPVXNPc8f+OK1w8DbjYNop16ub73+wstbb1x8ZVMe4n/fz1+BOytzs2BsKAAAAABJRU5ErkJggg==" alt="Country Flag" />
             </div>
             <div class="meta-line" id="display-address">Address , pincode , country</div>
             <div class="meta-line" id="display-coords">Lat Coordinates° Long Coordinates°</div>
