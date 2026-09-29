@@ -1,3 +1,49 @@
+// Mathematical cover fitting: preserves true aspect ratio in both browser and html2canvas without distortion
+function fitMainImage() {
+  const img = document.getElementById('display-image');
+  if (!img) return;
+
+  const containerW = 540;
+  const containerH = 720;
+  const naturalW = img.naturalWidth;
+  const naturalH = img.naturalHeight;
+
+  if (!naturalW || !naturalH) return;
+
+  const containerRatio = containerW / containerH;
+  const imageRatio = naturalW / naturalH;
+
+  let renderW, renderH, offsetX, offsetY;
+
+  if (imageRatio > containerRatio) {
+    // Image is wider than container (e.g. landscape): match height, crop width evenly
+    renderH = containerH;
+    renderW = containerH * imageRatio;
+    offsetX = (containerW - renderW) / 2;
+    offsetY = 0;
+  } else {
+    // Image is taller than container (e.g. portrait): match width, crop height evenly
+    renderW = containerW;
+    renderH = containerW / imageRatio;
+    offsetX = 0;
+    offsetY = (containerH - renderH) / 2;
+  }
+
+  img.style.position = 'absolute';
+  img.style.width = `${renderW}px`;
+  img.style.height = `${renderH}px`;
+  img.style.left = `${offsetX}px`;
+  img.style.top = `${offsetY}px`;
+}
+
+const displayImgEl = document.getElementById('display-image');
+if (displayImgEl) {
+  displayImgEl.addEventListener('load', fitMainImage);
+  if (displayImgEl.complete) {
+    fitMainImage();
+  }
+}
+
 // 1. Handle Main Image Upload
 document.getElementById('input-image').addEventListener('change', function(e) {
   const file = e.target.files[0];
@@ -6,6 +52,7 @@ document.getElementById('input-image').addEventListener('change', function(e) {
     reader.onload = function(event) {
       const displayImg = document.getElementById('display-image');
       displayImg.removeAttribute('crossorigin');
+      displayImg.onload = fitMainImage;
       displayImg.src = event.target.result;
     }
     reader.readAsDataURL(file);
@@ -180,14 +227,18 @@ function downloadImage() {
   
   btn.innerText = "Processing High-Res..."; 
   
+  // Ensure image fit is calculated before capture
+  fitMainImage();
+
   html2canvas(captureArea, { 
     scale: 4, 
     useCORS: true, 
     allowTaint: false,
-    width: 540,          // FORCE strict width
-    height: 720,         // FORCE strict height
-    windowWidth: 540,    // Bypass window scaling bugs
-    windowHeight: 720    // Bypass window scaling bugs
+    width: 540,
+    height: 720,
+    scrollX: 0,
+    scrollY: 0,
+    backgroundColor: null
   }).then(canvas => {
     const link = document.createElement('a');
     
