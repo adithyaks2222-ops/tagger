@@ -1,258 +1,605 @@
-// Mathematical cover fitting: preserves true aspect ratio in both browser and html2canvas without distortion
-function fitMainImage() {
-  const img = document.getElementById('display-image');
-  if (!img) return;
+/**
+ * GEOTAGGER — CORE SCRIPT
+ * Charcoal Studio Photography Utility Engine
+ */
 
-  const containerW = 540;
-  const containerH = 720;
-  const naturalW = img.naturalWidth;
-  const naturalH = img.naturalHeight;
-
-  if (!naturalW || !naturalH) return;
-
-  const containerRatio = containerW / containerH;
-  const imageRatio = naturalW / naturalH;
-
-  let renderW, renderH, offsetX, offsetY;
-
-  if (imageRatio > containerRatio) {
-    // Image is wider than container (e.g. landscape): match height, crop width evenly
-    renderH = containerH;
-    renderW = containerH * imageRatio;
-    offsetX = (containerW - renderW) / 2;
-    offsetY = 0;
-  } else {
-    // Image is taller than container (e.g. portrait): match width, crop height evenly
-    renderW = containerW;
-    renderH = containerW / imageRatio;
-    offsetX = 0;
-    offsetY = (containerH - renderH) / 2;
-  }
-
-  img.style.position = 'absolute';
-  img.style.width = `${renderW}px`;
-  img.style.height = `${renderH}px`;
-  img.style.left = `${offsetX}px`;
-  img.style.top = `${offsetY}px`;
-}
-
-const displayImgEl = document.getElementById('display-image');
-if (displayImgEl) {
-  displayImgEl.addEventListener('load', fitMainImage);
-  if (displayImgEl.complete) {
-    fitMainImage();
-  }
-}
-
-// 1. Handle Main Image Upload
-document.getElementById('input-image').addEventListener('change', function(e) {
-  const file = e.target.files[0];
-  if (file) {
-    const reader = new FileReader();
-    reader.onload = function(event) {
-      const displayImg = document.getElementById('display-image');
-      displayImg.removeAttribute('crossorigin');
-      displayImg.onload = fitMainImage;
-      displayImg.src = event.target.result;
+// Helper to safely load a remote image URL as a base64 Data URL
+// Prevents cross-origin canvas tainting during html2canvas export
+function urlToDataUrl(url) {
+  return new Promise((resolve) => {
+    if (!url || url.startsWith('data:')) {
+      return resolve(url);
     }
+    fetch(url, { mode: 'cors' })
+      .then((res) => {
+        if (!res.ok) throw new Error('Fetch failed');
+        return res.blob();
+      })
+      .then((blob) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = () => resolve(url);
+        reader.readAsDataURL(blob);
+      })
+      .catch(() => {
+        // Fallback to original URL if fetch fails
+        resolve(url);
+      });
+  });
+}
+
+// Helper to update an input and trigger the UI preview sync
+function updateAndTrigger(id, value) {
+  const el = document.getElementById(id);
+  if (el) {
+    el.value = value;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+}
+
+// Helper to update the country flag
+function setCountryFlag(countryCode) {
+  if (!countryCode) return;
+  const flagImg = document.getElementById('display-flag');
+  if (!flagImg) return;
+  const cleanCode = countryCode.toLowerCase().trim();
+  if (cleanCode === 'in') {
+    flagImg.src = 'src/flag.png';
+    return;
+  }
+  flagImg.src = `https://flagcdn.com/w40/${cleanCode}.png`;
+}
+
+let statusTimeout = null;
+function showLocationStatus(message, isSuccess = true) {
+  const statusEl = document.getElementById('location-status');
+  if (!statusEl) return;
+
+  statusEl.innerText = message;
+  statusEl.className = isSuccess ? 'location-status success' : 'location-status error';
+  statusEl.style.display = 'flex';
+
+  clearTimeout(statusTimeout);
+  statusTimeout = setTimeout(() => {
+    statusEl.style.display = 'none';
+  }, 4500);
+}
+
+// 1. Search Location via OpenStreetMap Nominatim
+async function searchLocation() {
+  const query = document.getElementById('input-search').value.trim();
+  if (!query) {
+    showLocationStatus('Please enter a location to search.', false);
+    return;
+  }
+
+  const btn = document.getElementById('btn-search');
+  const originalText = btn.innerText;
+  btn.innerText = 'Searching...';
+
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1`);
+    const data = await res.json();
+
+    if (data && data.length > 0) {
+      const place = data[0];
+      const lat = parseFloat(place.lat).toFixed(6);
+      const lng = parseFloat(place.lon).toFixed(6);
+
+      updateAndTrigger('input-lat', lat);
+      updateAndTrigger('input-lng', lng);
+      updateAndTrigger('input-address', place.display_name);
+
+      const addr = place.address || {};
+      const city = addr.city || addr.town || addr.village || addr.municipality || addr.county || '';
+      const state = addr.state || '';
+      const country = addr.country || '';
+
+      let title = '';
+      if (city && country) {
+        title = state ? `${city}, ${state}, ${country}` : `${city}, ${country}`;
+      } else if (city) {
+        title = city;
+      } else {
+        title = country || place.display_name.split(',')[0];
+      }
+      updateAndTrigger('input-title', title);
+
+      // Auto-update the flag to match detected country
+      if (addr.country_code) {
+        setCountryFlag(addr.country_code);
+      }
+
+      showLocationStatus(`Location locked: ${city || country || 'Coordinates updated'}`);
+    } else {
+      showLocationStatus('Location not found. Please try more specific terms.', false);
+    }
+  } catch (err) {
+    showLocationStatus('Unable to reach location service.', false);
+  } finally {
+    btn.innerText = originalText;
+  }
+}
+
+// 2. Fetch Live Device GPS Location (with Graceful IP Fallback)
+function geolocateMe() {
+  const btn = document.getElementById('btn-locate');
+  const originalHtml = btn.innerHTML;
+  btn.innerHTML = '<span>Detecting Location...</span>';
+
+  function applyLocationData(lat, lng, addressData) {
+    updateAndTrigger('input-lat', parseFloat(lat).toFixed(6));
+    updateAndTrigger('input-lng', parseFloat(lng).toFixed(6));
+
+    if (addressData) {
+      updateAndTrigger('input-address', addressData.display_name || '');
+      const addr = addressData.address || {};
+      const city = addr.city || addr.town || addr.village || addr.municipality || addr.county || '';
+      const state = addr.state || '';
+      const country = addr.country || '';
+
+      let title = '';
+      if (city && country) {
+        title = state ? `${city}, ${state}, ${country}` : `${city}, ${country}`;
+      } else if (city) {
+        title = city;
+      } else {
+        title = country || addressData.display_name.split(',')[0];
+      }
+      updateAndTrigger('input-title', title);
+
+      if (addr.country_code) {
+        setCountryFlag(addr.country_code);
+      }
+      showLocationStatus(`Location locked: ${title}`);
+    } else {
+      showLocationStatus(`Coordinates locked: ${parseFloat(lat).toFixed(4)}, ${parseFloat(lng).toFixed(4)}`);
+    }
+    btn.innerHTML = originalHtml;
+  }
+
+  // Fallback to IP geolocation if GPS is denied or unavailable
+  async function fallbackToIp() {
+    try {
+      const res = await fetch('https://ipapi.co/json/');
+      const data = await res.json();
+      if (data && data.latitude && data.longitude) {
+        try {
+          const revRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${data.latitude}&lon=${data.longitude}&addressdetails=1`);
+          const revData = await revRes.json();
+          applyLocationData(data.latitude, data.longitude, revData || { display_name: `${data.city}, ${data.region}, ${data.country_name}`, address: { city: data.city, country: data.country_name, country_code: data.country_code } });
+        } catch (e) {
+          applyLocationData(data.latitude, data.longitude, { display_name: `${data.city}, ${data.region}, ${data.country_name}`, address: { city: data.city, country: data.country_name, country_code: data.country_code } });
+        }
+        return;
+      }
+    } catch (e) {
+      showLocationStatus('Location unavailable. Please search or pick from map.', false);
+    }
+    btn.innerHTML = originalHtml;
+  }
+
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`);
+          const data = await res.json();
+          applyLocationData(lat, lng, data);
+        } catch (e) {
+          applyLocationData(lat, lng, null);
+        }
+      },
+      () => {
+        // Device GPS denied or timeout -> fallback to IP
+        fallbackToIp();
+      },
+      { enableHighAccuracy: true, timeout: 6000 }
+    );
+  } else {
+    fallbackToIp();
+  }
+}
+
+// --- INTERACTIVE MAP PICKER ENGINE ---
+let pickerMap = null;
+let pickerMarker = null;
+let currentPickedData = {
+  lat: null,
+  lng: null,
+  address: '',
+  title: '',
+  countryCode: ''
+};
+
+function openMapPicker() {
+  const modal = document.getElementById('map-picker-modal');
+  if (!modal) return;
+  modal.style.display = 'flex';
+
+  let lat = parseFloat(document.getElementById('input-lat').value) || 10.027319;
+  let lng = parseFloat(document.getElementById('input-lng').value) || 76.307723;
+
+  setTimeout(() => {
+    if (!pickerMap) {
+      pickerMap = L.map('interactive-map', {
+        zoomControl: true,
+        attributionControl: false
+      }).setView([lat, lng], 15);
+
+      const streetLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19,
+        subdomains: 'abcd',
+        attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+      });
+
+      const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 19,
+        attribution: 'Tiles &copy; Esri'
+      });
+
+      streetLayer.addTo(pickerMap);
+
+      L.control.layers({
+        'Street Map': streetLayer,
+        'Satellite': satelliteLayer
+      }, null, { position: 'topright' }).addTo(pickerMap);
+
+      const pinIcon = L.divIcon({
+        className: 'custom-leaflet-marker',
+        html: `<div style="width:20px;height:26px;background:#ea4335;border-radius:50% 50% 50% 0;transform:translate(-50%,-100%) rotate(-45deg);box-shadow:0 2px 5px rgba(0,0,0,0.5);"><div style="width:6px;height:6px;background:#7c1208;border-radius:50%;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);"></div></div>`,
+        iconSize: [20, 26],
+        iconAnchor: [0, 0]
+      });
+
+      pickerMarker = L.marker([lat, lng], {
+        draggable: true,
+        icon: pinIcon
+      }).addTo(pickerMap);
+
+      pickerMarker.on('dragend', function (e) {
+        const pos = e.target.getLatLng();
+        onPickerPositionChange(pos.lat, pos.lng);
+      });
+
+      pickerMap.on('click', function (e) {
+        pickerMarker.setLatLng(e.latlng);
+        onPickerPositionChange(e.latlng.lat, e.latlng.lng);
+      });
+    } else {
+      pickerMap.invalidateSize();
+      pickerMap.setView([lat, lng], 15);
+      pickerMarker.setLatLng([lat, lng]);
+    }
+
+    onPickerPositionChange(lat, lng);
+  }, 100);
+}
+
+function closeMapPicker() {
+  const modal = document.getElementById('map-picker-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+let pickerDebounce = null;
+function onPickerPositionChange(lat, lng) {
+  currentPickedData.lat = parseFloat(lat).toFixed(6);
+  currentPickedData.lng = parseFloat(lng).toFixed(6);
+
+  const coordsEl = document.getElementById('modal-picked-coords');
+  const addrEl = document.getElementById('modal-picked-address');
+  if (coordsEl) coordsEl.innerText = `Lat ${currentPickedData.lat} • Long ${currentPickedData.lng}`;
+  if (addrEl) addrEl.innerText = 'Resolving address...';
+
+  clearTimeout(pickerDebounce);
+  pickerDebounce = setTimeout(async () => {
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`);
+      const data = await res.json();
+      if (data) {
+        currentPickedData.address = data.display_name || '';
+        const addr = data.address || {};
+        const city = addr.city || addr.town || addr.village || addr.municipality || addr.county || '';
+        const state = addr.state || '';
+        const country = addr.country || '';
+
+        let title = '';
+        if (city && country) {
+          title = state ? `${city}, ${state}, ${country}` : `${city}, ${country}`;
+        } else if (city) {
+          title = city;
+        } else {
+          title = country || data.display_name.split(',')[0];
+        }
+        currentPickedData.title = title;
+        currentPickedData.countryCode = addr.country_code || '';
+
+        if (addrEl) addrEl.innerText = data.display_name || title;
+      }
+    } catch (e) {
+      if (addrEl) addrEl.innerText = 'Address lookup unavailable (coordinates recorded)';
+    }
+  }, 350);
+}
+
+async function searchModalLocation() {
+  const query = document.getElementById('modal-map-search').value.trim();
+  if (!query) return;
+
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`);
+    const data = await res.json();
+    if (data && data.length > 0) {
+      const lat = parseFloat(data[0].lat);
+      const lon = parseFloat(data[0].lon);
+      if (pickerMap && pickerMarker) {
+        pickerMap.setView([lat, lon], 15);
+        pickerMarker.setLatLng([lat, lon]);
+        onPickerPositionChange(lat, lon);
+      }
+    }
+  } catch (e) {}
+}
+
+function confirmMapLocation() {
+  if (currentPickedData.lat && currentPickedData.lng) {
+    updateAndTrigger('input-lat', currentPickedData.lat);
+    updateAndTrigger('input-lng', currentPickedData.lng);
+
+    if (currentPickedData.title) {
+      updateAndTrigger('input-title', currentPickedData.title);
+    }
+    if (currentPickedData.address) {
+      updateAndTrigger('input-address', currentPickedData.address);
+    }
+    if (currentPickedData.countryCode) {
+      setCountryFlag(currentPickedData.countryCode);
+    }
+
+    showLocationStatus(`Location set from map: ${currentPickedData.title || 'Updated'}`);
+    closeMapPicker();
+  }
+}
+
+// Close map picker when clicking backdrop or pressing Escape
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    closeMapPicker();
+  }
+});
+
+const mapModalEl = document.getElementById('map-picker-modal');
+if (mapModalEl) {
+  mapModalEl.addEventListener('click', (e) => {
+    if (e.target === mapModalEl) {
+      closeMapPicker();
+    }
+  });
+}
+
+// Enter key to search
+document.getElementById('input-search')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    searchLocation();
+  }
+});
+
+document.getElementById('modal-map-search')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    searchModalLocation();
+  }
+});
+
+// 3. Format Date & Time
+function setCurrentTime() {
+  const now = new Date();
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const dayName = dayNames[now.getDay()];
+
+  const pad = (n) => String(n).padStart(2, '0');
+  const day = pad(now.getDate());
+  const month = pad(now.getMonth() + 1);
+  const year = now.getFullYear();
+
+  let hours = now.getHours();
+  const minutes = pad(now.getMinutes());
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  const hours12 = pad(hours % 12 || 12);
+
+  const offsetMin = -now.getTimezoneOffset();
+  const sign = offsetMin >= 0 ? '+' : '-';
+  const offHours = pad(Math.floor(Math.abs(offsetMin) / 60));
+  const offMinutes = pad(Math.abs(offsetMin) % 60);
+  const tz = `GMT ${sign}${offHours}:${offMinutes}`;
+
+  const formattedStr = `${dayName}, ${day}/${month}/${year} ${hours12}:${minutes} ${ampm} ${tz}`;
+  updateAndTrigger('input-time', formattedStr);
+}
+
+// 4. Orientation Switcher (Segmented Switch & Select Sync)
+function setOrientation(orientation) {
+  const captureArea = document.getElementById('capture-area');
+  const orientSelect = document.getElementById('input-orientation');
+  const btnPortrait = document.getElementById('btn-orient-portrait');
+  const btnLandscape = document.getElementById('btn-orient-landscape');
+
+  if (orientation === 'landscape') {
+    captureArea.classList.remove('portrait');
+    captureArea.classList.add('landscape');
+    if (orientSelect) orientSelect.value = 'landscape';
+    if (btnPortrait) btnPortrait.classList.remove('active');
+    if (btnLandscape) btnLandscape.classList.add('active');
+  } else {
+    captureArea.classList.remove('landscape');
+    captureArea.classList.add('portrait');
+    if (orientSelect) orientSelect.value = 'portrait';
+    if (btnLandscape) btnLandscape.classList.remove('active');
+    if (btnPortrait) btnPortrait.classList.add('active');
+  }
+}
+
+// Handle select element change (for backward compatibility)
+const orientSelectEl = document.getElementById('input-orientation');
+if (orientSelectEl) {
+  orientSelectEl.addEventListener('change', function (e) {
+    setOrientation(e.target.value);
+  });
+}
+
+// 5. Handle Main Image Upload (with Smart Auto-Orientation)
+document.getElementById('input-image').addEventListener('change', function (e) {
+  const file = e.target.files && e.target.files[0];
+  if (file) {
+    if (!file.type.startsWith('image/')) {
+      showLocationStatus('Please upload a valid image file.', false);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function (event) {
+      const img = new Image();
+      img.onload = function () {
+        const isLandscape = img.width > img.height;
+        setOrientation(isLandscape ? 'landscape' : 'portrait');
+        document.getElementById('display-image').src = event.target.result;
+      };
+      img.src = event.target.result;
+    };
     reader.readAsDataURL(file);
   }
 });
 
-// Embedded default India flag (Base64) - 100% reliable across local file:// and web servers
-const DEFAULT_FLAG_DATA = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAB0AAAASCAYAAACnxdXaAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAACxIAAAsSAdLdfvwAAALqSURBVEhLtZS/b1tVFMc/5973K36xHTduXCdNSktTWKDAQGGAEdGJAQnBysAP8W8gsbBVAnYGJAQTEhnYgAHRAYREq0iRSpM2KW3s2M6z/Z7tdw9DQlRbEFrhfqYrnaPzPfqec48wBVS/tHc+/2I+SO+eFE9PGLKIgYqGYT7SQiePCpu1t765K4ICiIK0P336I8T8RlTc4NRTTamc3ivd/GX/d2A+bflpp1UsS3/BWLdoHCvCcAl1KwaWVXlM0BVD7k828zeKoGJbuY2vzb7z1WVRRbqfnEut5sH9SQ5RAIuTsQr/A2cCZt5bqxlQUBkrLCgWJ9MUBA68JcZMBh493emKqlicF6NhBY1O4IIyzvjAuGGiqpKsfZDZxjVfk20kH3C4ZEcogtoAiSpQWCCPT3Gr6VE6vUqpfh7iGlqoYsI5MD6KAQTBgY7QtA2dG9DcIH7uzdqBaLeXIgSiIzRrwWAf8hGIoDZEwhLix6gYWu0eG+u3qC/O001SAC48uTzW5HHEMzO1Q3tVAVQ8iKpQOguVVZg7jxSXISgfxDDc2NimXC5w9efr9Pt9ur1souzxdOFwpiL5ZPDfsNbS2G3RbCbkoxzzkPsdH4lOTvoYsmzAhSfO8Orl5ymWZimXZydT/hNRVfn1j/Xk7MmlgpXjl1lR+sOM7368ys1727iCIwsG7LR3udNp0ui2aff3SYcDnDoC61OMCtTLVc5Vl7i4tMrbL71WE4Dg3Ut7hTCaO1NdpF6apxTN4nsezjmy0YBWP6GRtPmz02Cv1zk8oEedHLzHF/4fCY3H7SvfLxyJYmRuMmnaBMayfeWHheP9fAQkJNO9SA+CCioA0fsv7jn0ge0VoBgWhr61t8XYTVHZCq23YzxzLzJBJwrCLPCsJmnP9NJhcchocTgaroryzPWP1y4JwIdff1b/dv2nZxvd9uOqsqJGKy7PPVXNPc8f+OK1w8DbjYNop16ub73+wstbb1x8ZVMe4n/fz1+BOytzs2BsKAAAAABJRU5ErkJggg==";
+// 6. Handle Image Fit Toggle (Cover vs Contain)
+document.getElementById('input-fit').addEventListener('change', function (e) {
+  document.getElementById('display-image').style.objectFit = e.target.value;
+});
 
-const displayFlag = document.getElementById('display-flag');
-const selectFlag = document.getElementById('select-flag');
-const inputFlag = document.getElementById('input-flag');
-
-// Safe Flag URLs from Flagcdn
-const flagMap = {
-  in: DEFAULT_FLAG_DATA,
-  us: 'https://flagcdn.com/w40/us.png',
-  gb: 'https://flagcdn.com/w40/gb.png',
-  ae: 'https://flagcdn.com/w40/ae.png',
-  sa: 'https://flagcdn.com/w40/sa.png',
-  ca: 'https://flagcdn.com/w40/ca.png',
-  au: 'https://flagcdn.com/w40/au.png',
-  de: 'https://flagcdn.com/w40/de.png',
-  fr: 'https://flagcdn.com/w40/fr.png',
-  jp: 'https://flagcdn.com/w40/jp.png',
-  sg: 'https://flagcdn.com/w40/sg.png',
-};
-
-// Convert remote flag to Data URL to avoid CORS taint during html2canvas export
-function applyFlag(url) {
-  if (!url) return;
-  displayFlag.style.display = 'inline-block';
-  displayFlag.removeAttribute('crossorigin');
-
-  if (url.startsWith('data:')) {
-    displayFlag.src = url;
-    return;
+// 7. Handle Custom Flag Upload
+document.getElementById('input-flag').addEventListener('change', function (e) {
+  const file = e.target.files && e.target.files[0];
+  if (file) {
+    const reader = new FileReader();
+    reader.onload = function (event) {
+      document.getElementById('display-flag').src = event.target.result;
+    };
+    reader.readAsDataURL(file);
   }
+});
 
-  fetch(url)
-    .then(res => res.blob())
-    .then(blob => {
-      const reader = new FileReader();
-      reader.onload = e => {
-        displayFlag.src = e.target.result;
-        displayFlag.removeAttribute('crossorigin');
-      };
-      reader.readAsDataURL(blob);
-    })
-    .catch(() => {
-      displayFlag.crossOrigin = 'anonymous';
-      displayFlag.src = url;
-    });
-}
-
-// Fallback if flag fails to load
-displayFlag.onerror = function() {
-  displayFlag.removeAttribute('crossorigin');
-  displayFlag.src = DEFAULT_FLAG_DATA;
-};
-
-// 2. Handle Country Flag Selector
-if (selectFlag) {
-  selectFlag.addEventListener('change', function(e) {
-    const val = e.target.value;
-    if (val === 'none') {
-      displayFlag.style.display = 'none';
-    } else if (val === 'custom') {
-      inputFlag.click();
-    } else if (flagMap[val]) {
-      applyFlag(flagMap[val]);
-    }
-  });
-}
-
-// 3. Handle Custom Flag Image Upload
-if (inputFlag) {
-  inputFlag.addEventListener('change', function(e) {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = function(event) {
-        displayFlag.removeAttribute('crossorigin');
-        displayFlag.src = event.target.result;
-        displayFlag.style.display = 'inline-block';
-        if (selectFlag) selectFlag.value = 'custom';
-      };
-      reader.readAsDataURL(file);
-    }
-  });
-}
-
-// 3. Dynamic Text Updates
-const updateText = (inputId, displayId) => {
+// 8. Dynamic Text Synchronization
+const syncText = (inputId, displayId) => {
   const inputEl = document.getElementById(inputId);
-  if(inputEl) {
-      inputEl.addEventListener('input', function(e) {
-        document.getElementById(displayId).innerText = e.target.value;
-      });
+  const displayEl = document.getElementById(displayId);
+  if (inputEl && displayEl) {
+    inputEl.addEventListener('input', function (e) {
+      displayEl.innerText = e.target.value;
+    });
   }
 };
 
-updateText('input-title', 'display-title');
-updateText('input-address', 'display-address');
-updateText('input-time', 'display-time');
+syncText('input-title', 'display-title');
+syncText('input-address', 'display-address');
+syncText('input-time', 'display-time');
 
-// 3b. Smart Country Detection from Location Title / Address
-const countryKeywords = [
-  { keywords: ['india', 'kerala', 'delhi', 'mumbai', 'kochi', 'bangalore', 'bharat'], code: 'in' },
-  { keywords: ['united states', 'usa', 'america', 'california', 'new york', 'texas', 'florida', 'washington'], code: 'us' },
-  { keywords: ['united kingdom', 'uk', 'london', 'england', 'britain', 'scotland'], code: 'gb' },
-  { keywords: ['united arab emirates', 'uae', 'dubai', 'abu dhabi', 'sharjah'], code: 'ae' },
-  { keywords: ['saudi arabia', 'saudi', 'riyadh', 'jeddah', 'mecca'], code: 'sa' },
-  { keywords: ['canada', 'toronto', 'vancouver', 'ontario', 'montreal'], code: 'ca' },
-  { keywords: ['australia', 'sydney', 'melbourne', 'brisbane'], code: 'au' },
-  { keywords: ['germany', 'berlin', 'munich', 'frankfurt', 'deutschland'], code: 'de' },
-  { keywords: ['france', 'paris', 'lyon', 'marseille'], code: 'fr' },
-  { keywords: ['japan', 'tokyo', 'osaka', 'kyoto'], code: 'jp' },
-  { keywords: ['singapore'], code: 'sg' },
-];
-
-const checkAutoFlag = (text) => {
-  if (selectFlag && selectFlag.value !== 'custom' && selectFlag.value !== 'none') {
-    const lower = text.toLowerCase();
-    for (const item of countryKeywords) {
-      if (item.keywords.some(k => lower.includes(k))) {
-        if (selectFlag.value !== item.code) {
-          selectFlag.value = item.code;
-          applyFlag(flagMap[item.code]);
-        }
-        break;
-      }
-    }
-  }
-};
-
-const inputTitleEl = document.getElementById('input-title');
-if (inputTitleEl) {
-  inputTitleEl.addEventListener('input', e => checkAutoFlag(e.target.value));
-}
-const inputAddressEl = document.getElementById('input-address');
-if (inputAddressEl) {
-  inputAddressEl.addEventListener('input', e => checkAutoFlag(e.target.value));
+// 9. Dynamic Coordinates & Satellite Map Preview (Debounced)
+let coordsMapDebounce = null;
+function getSatelliteTileUrl(lat, lng, zoom = 15) {
+  const nLat = parseFloat(lat);
+  const nLng = parseFloat(lng);
+  if (isNaN(nLat) || isNaN(nLng)) return '';
+  const x = Math.floor((nLng + 180) / 360 * Math.pow(2, zoom));
+  const y = Math.floor((1 - Math.log(Math.tan(nLat * Math.PI / 180) + 1 / Math.cos(nLat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom));
+  return `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${zoom}/${y}/${x}`;
 }
 
-// 4. Dynamic Coordinates & Smart Map Toggle
-const updateCoordsAndMap = () => {
-  const lat = document.getElementById('input-lat').value;
-  const lng = document.getElementById('input-lng').value;
-  
+function updateCoordsAndMap() {
+  const lat = document.getElementById('input-lat').value.trim();
+  const lng = document.getElementById('input-lng').value.trim();
+
   document.getElementById('display-coords').innerText = `Lat ${lat}° Long ${lng}°`;
-  
-  const mapImg = document.getElementById('map-img');
-  
-  if (lat.trim() !== '' && lng.trim() !== '' && !isNaN(lat) && !isNaN(lng)) {
+
+  clearTimeout(coordsMapDebounce);
+  coordsMapDebounce = setTimeout(() => {
+    const mapImg = document.getElementById('map-img');
+    if (lat !== '' && lng !== '' && !isNaN(lat) && !isNaN(lng)) {
       mapImg.style.display = 'block';
-      mapImg.src = `https://static-maps.yandex.ru/1.x/?ll=${lng},${lat}&z=15&l=sat&size=200,200`;
-  } else {
-      mapImg.style.display = 'none'; 
-  }
-};
+      const mapUrl = `https://static-maps.yandex.ru/1.x/?ll=${lng},${lat}&z=15&l=sat&size=200,200`;
+      mapImg.onerror = function () {
+        const fallback = getSatelliteTileUrl(lat, lng);
+        if (fallback && mapImg.src !== fallback) {
+          mapImg.src = fallback;
+        }
+      };
+      mapImg.src = mapUrl;
+    } else {
+      mapImg.style.display = 'none';
+    }
+  }, 200);
+}
 
 document.getElementById('input-lat').addEventListener('input', updateCoordsAndMap);
 document.getElementById('input-lng').addEventListener('input', updateCoordsAndMap);
-updateCoordsAndMap();
 
-// 5. Bulletproof High-Res Download Functionality (Viewport Locked)
-function downloadImage() {
+// 10. Reliable High-Resolution Image Export
+async function downloadImage() {
   const captureArea = document.getElementById('capture-area');
-  const btn = document.querySelector('.btn-download');
+  const btn = document.getElementById('btn-download');
   const originalText = btn.innerText;
-  
-  btn.innerText = "Processing High-Res..."; 
-  
-  // Ensure image fit is calculated before capture
-  fitMainImage();
 
-  html2canvas(captureArea, { 
-    scale: 4, 
-    useCORS: true, 
-    allowTaint: false,
-    width: 540,
-    height: 720,
-    scrollX: 0,
-    scrollY: 0,
-    backgroundColor: null
-  }).then(canvas => {
+  btn.innerText = 'Processing Image...';
+  btn.disabled = true;
+
+  try {
+    // Pre-convert remote map and flag images to local Data URLs to prevent canvas tainting
+    const mapImg = document.getElementById('map-img');
+    if (mapImg && mapImg.src && !mapImg.src.startsWith('data:')) {
+      mapImg.src = await urlToDataUrl(mapImg.src);
+    }
+
+    const flagImg = document.getElementById('display-flag');
+    if (flagImg && flagImg.src && !flagImg.src.startsWith('data:')) {
+      flagImg.src = await urlToDataUrl(flagImg.src);
+    }
+
+    const isLandscape = captureArea.classList.contains('landscape');
+    const exportWidth = isLandscape ? 720 : 540;
+    const exportHeight = isLandscape ? 540 : 720;
+
+    const canvas = await html2canvas(captureArea, {
+      scale: 3, // High-resolution output (1620x2160 or 2160x1620)
+      useCORS: true,
+      allowTaint: true,
+      width: exportWidth,
+      height: exportHeight,
+      windowWidth: 1440, // Render at desktop width to avoid responsive downscaling
+      windowHeight: 1200,
+      scrollX: 0,
+      scrollY: 0,
+      backgroundColor: null
+    });
+
     const link = document.createElement('a');
-    
-    link.download = 'Geotagger.png'; 
-    link.href = canvas.toDataURL('image/png'); 
-    
+    const titleVal = document.getElementById('input-title').value.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 20) || 'GeoTagger';
+    link.download = `GeoTagger_${titleVal}.png`;
+    link.href = canvas.toDataURL('image/png');
+
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    
-    btn.innerText = originalText; 
-  }).catch(err => {
-    console.error("Export Error:", err);
-    alert("Download blocked by browser security. Ensure you are running this on a Local Web Server or HTTPS connection.");
-    btn.innerText = originalText; 
-  });
+  } catch (err) {
+    console.error('Export Error:', err);
+    showLocationStatus('Image export failed. Check browser permissions.', false);
+  } finally {
+    btn.innerText = originalText;
+    btn.disabled = false;
+  }
 }
+
+// Initialize on page load
+window.addEventListener('DOMContentLoaded', () => {
+  updateCoordsAndMap();
+});
